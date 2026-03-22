@@ -1,0 +1,234 @@
+---
+title: "Horror Movie Collections in the 21st Century"
+author: "Meghan Monagan"
+format: html
+embed-resources: true
+---
+## Central Question: Which 2000s horror movie franchise is the most financially efficient? 
+
+That is, what is the return each franchise generates relative to their costs?
+
+Note: Shout out to R-Ladies Paris. I was inspired to wrangle the data set based on their Introduction to {ggplot2} Workshop where they further explore Tanya Shapiro's Horror Movies data set.[^1]
+
+```{r}
+#| echo: true
+#| message: false
+
+library(tidyverse)
+library(gt)
+library(ggrepel)
+
+raw_horror_movies <- read.csv("horror_movies.csv")
+
+cleaned_horror_movies <- raw_horror_movies |> 
+  mutate(budget = budget/1000000,
+         revenue = revenue/1000000,
+         profit = revenue - budget,
+         roi = profit / budget,
+         release_date = as.Date(release_date),
+         release_year = as.numeric(format(release_date, '%Y')),
+         release_month = as.numeric((format(release_date, '%m'))))
+
+new_horror_movies <- cleaned_horror_movies |> 
+  select(title, collection_name, genre_names, original_language, release_date, release_month, release_year, popularity, profit, roi, budget, revenue)
+
+gt(head(new_horror_movies, 5))
+```
+
+## Deciding which franchises to investigate
+
+```{r}
+valid_movie_collections <- new_horror_movies |>
+  filter(!is.na(collection_name),
+         !is.na(budget),
+         !is.na(revenue),
+         revenue > 0,
+         original_language == "en") |>
+  group_by(collection_name) |>
+  summarise(num_movies = n(),
+            start_year = min(release_year, na.rm = TRUE),
+            end_year = max(release_year, na.rm = TRUE),
+            span_years = end_year - start_year,
+            avg_revenue = mean(revenue, na.rm = TRUE),
+            avg_budget = mean(budget, na.rm = TRUE)) |>  
+  filter(span_years >= 10, span_years <= 15) |> 
+  arrange(desc(num_movies))
+
+gt(head(valid_movie_collections, 5))
+```
+
+## Exploring three franchises financials: *Saw*, *Final Destination*, and *Resident Evil*
+
+I narrowed it down based on English speaking movie collections with similar time spans released in the early 2000s.
+
+```{r}
+keep_collections <- c("Saw Collection", "Final Destination Collection", "Resident Evil Collection")
+
+filtered_collections <- new_horror_movies |>
+  filter(collection_name %in% keep_collections)
+```
+
+## How **big** are these franchises?
+
+```{r}
+#| warning: false
+#| fig-alt: "Point/ Line plot illustrating the fluctuating relationship between release year and revenue of different movie collections including Final Destination, Resident Evil, and Saw. All collections can see atleast a slight increase in revenue over time. The movie, Resident Evil: The Final Chapter, experienced a much higher revenue than any other movie prior."
+
+ggplot(filtered_collections,
+       aes(x = release_year,
+           y = revenue,
+           color = collection_name)) +
+  geom_jitter(alpha = .7, size = 3) + 
+  geom_smooth(se = FALSE, linewidth = 1) +
+  geom_text_repel(aes(label = title), size = 3) + #labeling each movie point
+  labs(x = "Release Year",
+       y = "Revenue",
+       title = "Revenue of Horror Movies Over Time",
+       color = "Collection Name",
+       alt = "Point/ Line plot illustrating the fluctuating relationship between the release year (on the x-axis) and revenue (on the y-axis) of different movie franchises, the Final Destination Collection, Resident Evil Collection, and Saw Collection.") +
+  scale_color_brewer(palette = "Dark2") +
+  theme_minimal()
+```
+
+Examining the revenue of each collection, the initial films were all released within a five-year span and generated relatively similar earnings, each bringing in roughly $100–$120 million. Over time, revenue fluctuated across subsequent releases, with some installments outperforming or under performing their predecessors. More than a decade later, however, the *Resident Evil* collection demonstrates significantly greater scale, with recent films earning nearly three times the revenue of those in the *Saw* collection.
+
+All this being said, is revenue the greatest indicator of financial success? 
+
+## Profit
+
+Profit shows how much a firm ACTUALLY earns after taking into account the **cost** on the investment. 
+
+```{r}
+#| fig-alt: "Dumbbell plot indicating the gap between budget and revenue of horror movies in the three collections. The top three movies with the greatest profit are all from the Resident Evil Collection."
+
+ggplot(filtered_collections,
+       aes(y = reorder(title, revenue),
+           color = collection_name)) +
+  geom_segment(aes(x = budget, xend = revenue, yend = title), linewidth = 1.5, alpha = 0.6) +   # line connecting budget to revenue
+  geom_point(aes(x = budget), color = "black", size = 2) +   # budget point
+  geom_point(aes(x = revenue), size = 2) +   # revenue point
+  labs(title = "Horror Movies Budget vs Revenue (Profit Gap)",
+       x = "Millions USD",
+       y = "Movie",
+       color = "Collection Name",
+       alt = "Dumbbell plot indicating the gap between budget and revenue of horror movies in the three collections. The top three movies with the greatest profit are all from the Resident Evil Collection.") +
+  scale_color_brewer(palette = "Dark2") +
+  theme_minimal()
+```
+
+This dumbbell plot shows the difference between each movie’s budget (left point) and revenue (right point), with the colored segment in between representing profit. Notice that the *Resident Evil* films with the highest revenues also incur the highest costs.
+
+How do this effect the franchises returns?
+
+## Return on Investment (ROI)
+
+ROI measures how much profit (or loss) an investment generates relative to its cost. It is expressed as a percentage and allows for easy comparison across investments (in this case, movie releases). Many investors will use ROI, alongside other financial metrics, for a deeper analysis.[^2]
+
+ROI is calculated as profit divided by the cost of the investment.
+
+```{r}
+#| warning: false
+#| fig-alt: "Point/ Line plot illustrating the ROI (y-axis) of horror movie collections over time (release year on the x-axis). The Saw collection strongly outperforms the rest, reaching a similar ROI after their fifth release."
+
+ggplot(filtered_collections,
+       aes(x = release_year, 
+           y = roi, 
+           color = collection_name)) +
+  geom_point(alpha = 0.6, size = 3) +
+  geom_smooth(se = FALSE, linewidth = 1) +
+  geom_text_repel(aes(label = title), size = 3, max.overlaps = 10) + #labeling each movie point
+  labs(title = "ROI of Horror Movies Over Time",
+       x = "Release Year",
+       y = "Return on Investment",
+       color = "Collection Name",
+       alt = "Point/ Line plot illustrating the ROI (y-axis) of horror movie collections over time (release year on the x-axis). The Saw collection strongly outperforms the rest, reaching a similar ROI after their fifth release.") +
+  scale_color_brewer(palette = "Dark2") +
+  theme_minimal()
+```
+
+Wow! Now that’s a huge difference in ROI between the first movies of each franchise. I can hardly believe *Saw* has an ROI around 8,500%! Let’s double-check:
+
+Revenue = $103,911,670
+
+Budget = $1,200,000
+
+Profit = $102,711,670
+
+ROI = Profit / Budget = 85.59 × 100 = 8,559%
+
+I’m shocked. That is some serious financial efficiency. In other words, *Saw* is getting more **BANG** for its buck.
+
+After the first five movies in the *Saw* collection, the franchises’ ROIs start to converge.
+
+## Which franchise actually yielded the greatest returns?
+
+In a landslide, you guessed it... *Saw*!
+
+```{r}
+summary_table <- filtered_collections |>
+  group_by(collection_name) |> 
+  summarise(n_movies = n(),
+            median_revenue = median(revenue, na.rm = TRUE),
+            median_budget = median(budget, na.rm = TRUE),
+            median_profit = median(profit, na.rm = TRUE),
+            median_roi = median(roi, na.rm = TRUE)) |> 
+  arrange(desc(median_roi))
+
+gt(summary_table)
+```
+
+```{r}
+#| fig-alt: "Bar chart illustrating the difference in the median ROI between horror movie collections. The Saw collection has an ROI about four times greater than the Final Destination and Resident Evil collections."
+
+ggplot(summary_table, 
+       aes(x = collection_name, 
+           y = median_roi, 
+           fill = collection_name)) +
+  geom_col() +
+  labs(x = "Collection",
+       y = "Median Return on Investment",
+       title = "Median ROI by Horror Movie Collection",
+       fill = "Collection Name",
+       alt = "Bar chart illustrating the difference in the median ROI between horror movie collections. The Saw collection has an ROI about four times greater than the Final Destination and Resident Evil collections.") +
+  scale_fill_brewer(palette = "Dark2") +
+  theme_minimal()
+```
+
+Because *Saw* has an extreme outlier, the first movie, while the rest of its films cluster closer to other franchises, I used the median ROI to represent a typical movie in each collection. This lowers the overall ROI for the *Saw* series but it still comes out on top in financial efficiency. This shows that the franchise’s success isn’t just due to one blockbuster. Instead, it is consistently efficient.
+
+## What other factors, beyond finances, could be fueling *Saw*’s success?
+
+My guess is the release month for each film. 
+
+```{r}
+#| fig-alt: "Bar chart illustrating the number of movies released per month based on horror movie collection. While Final Destination and Resident Evil  released movies scattered throughout the year, Saw released all eight movies in October."
+
+ggplot(filtered_collections,
+       aes(x = factor(release_month, levels = 1:12),
+           fill = collection_name)) +
+  geom_bar(position = "dodge") +
+  scale_x_discrete(labels = month.abb, drop = FALSE) + #labels x-axis with 3-letter month abbreviations (even if no data)
+  labs(title = "Release Month Distribution by Horror Movie Collection",
+       x = "Release Month",
+       y = "Number of Movies",
+       fill = "Collection",
+       alt = "Bar chart illustrating the number of movies released per month based on horror movie collection. While Final Destination and Resident Evil  released movies scattered throughout the year, Saw released all eight movies in October.") +
+  scale_fill_brewer(palette = "Dark2") +
+  theme_minimal()
+```
+
+Through analyzing the Horror Movies data set by Tanya Shapiro, the *Saw* franchise appears to be the most financially efficient horror series in comparison to the franchises, *Final Destination* and *Resident Evil*. In addition, I read the Harvard Business Review article “The Psychology Behind Why We Love (or Hate) Horror,”[^3] which further explains who is drawn to movies like these and why. After all, you need an audience to make money. And the *Saw* franchise did not just make money; it made a lot of money relative to what it cost to produce.
+
+The first trend I found was in the revenue plot. By the end of production, *Resident Evil* pulled in the highest total revenue, but it did not rank as the most financially efficient franchise. The dumbbell plot made this clear: *Resident Evil* had much larger budgets, too. *Saw*, by contrast, generated enormous profit from a tiny initial budget, resulting in an extreme ROI.
+
+That is where the Harvard Business Review article fits in. The article explains that horror works best when audiences feel both fear and safety simultaneously. People enjoy the stimulation, novelty, and curiosity without feeling truly threatened. It also points out that horror fans tend to be sensation seekers and open to new experiences. *Saw* seems to benefit from that logic: it delivers intense, memorable horror while keeping production costs relatively low. Thus, the franchise can capture consumers demand without needing huge budgets.
+
+Additionally, all eight *Saw* films came out in October. I think this is a very smart move for Horror franchises to make as they know when people are most likely to watch a scary movie. Speaking from personal experience, I am much more likely to go to the theater, or even watch one at home, leading up to Halloween. This is likely due to the novelty aspect. It makes sense that horror movies are built around seasonal anticipation along with the energy that Halloween brings. While *Final Destination* and *Resident Evil* were spread more evenly across the year, *Saw* only released films when horror was most visible and socially rewarding.
+
+This project was interesting to me because it connects finance (my major) to culture and psychology. The numbers show *Saw* is the most efficient franchise, and the Harvard Business Review explains why horror can succeed without huge spending. Audiences want controlled fear, novelty, and excitement, and *Saw* delivers just that.
+
+[^1]: <a href="https://tashapiro.github.io/horror-movies/code/ggplot-workshop">Introduction to {ggplot2} Workshop, R-Ladies Paris</a>
+
+[^2]: <a href="https://www.investopedia.com/terms/r/returnoninvestment.asp">Return on Investment, Investopedia</a>
+
+[^3]: <a href="https://hbr.org/2021/10/the-psychology-behind-why-we-love-or-hate-horror">"The Psychology Behind Why We Love (or Hate) Horror," Harvard Business Review</a>
